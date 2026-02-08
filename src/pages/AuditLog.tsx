@@ -1,90 +1,56 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ScrollText, Bot, User, ShieldCheck, AlertTriangle, X } from "lucide-react";
+import { ShieldCheck, AlertTriangle, X } from "lucide-react";
+import { auditStore } from "@/core/audit/auditStore";
+import type { AuditEntry } from "@/core/audit/types";
+import { eventBus, Events } from "@/core/events/bus";
 
-const logs = [
-  {
-    id: 1,
-    time: "14:32:05",
-    date: "Feb 7, 2026",
-    actor: "AI Agent",
-    action: "Executed stop-loss on BTC position",
-    type: "auto" as const,
-    detail: {
-      summary: "Sold 0.5 BTC at $42,100 due to 5.2% price drop trigger",
-      reason: "Stop-loss rule #3 activated: Crypto price drop > 5%",
-      policy: "Approved — within auto-execute rules (max loss 5%)",
-      outcome: "Position closed. Realized loss: -$2,210",
-    },
-  },
-  {
-    id: 2,
-    time: "11:15:22",
-    date: "Feb 7, 2026",
-    actor: "You",
-    action: "Approved portfolio rebalance suggestion",
-    type: "manual" as const,
-    detail: {
-      summary: "Rebalanced portfolio to target allocation",
-      reason: "Monthly rebalance suggested by AI agent",
-      policy: "User-approved action",
-      outcome: "3 trades executed. Portfolio aligned to target.",
-    },
-  },
-  {
-    id: 3,
-    time: "09:00:00",
-    date: "Feb 7, 2026",
-    actor: "System",
-    action: "Daily risk assessment completed",
-    type: "system" as const,
-    detail: {
-      summary: "All positions within risk parameters",
-      reason: "Scheduled daily check",
-      policy: "No action required",
-      outcome: "Risk score: 62/100 (Medium)",
-    },
-  },
-  {
-    id: 4,
-    time: "22:45:11",
-    date: "Feb 6, 2026",
-    actor: "AI Agent",
-    action: "Suggested tax-loss harvesting on TSLA",
-    type: "suggestion" as const,
-    detail: {
-      summary: "TSLA position down 12% — harvesting opportunity",
-      reason: "Unrealized loss of $4,800 detected",
-      policy: "Suggest mode — awaiting user approval",
-      outcome: "Pending user action",
-    },
-  },
-  {
-    id: 5,
-    time: "18:30:00",
-    date: "Feb 6, 2026",
-    actor: "System",
-    action: "Connector sync completed: Binance",
-    type: "system" as const,
-    detail: {
-      summary: "Successfully synced 14 positions from Binance",
-      reason: "Scheduled sync every 5 minutes",
-      policy: "Read-only access",
-      outcome: "All data up to date",
-    },
-  },
-];
-
-const typeConfig = {
-  auto: { color: "text-primary", icon: Bot },
-  manual: { color: "text-success", icon: User },
-  system: { color: "text-muted-foreground", icon: ShieldCheck },
-  suggestion: { color: "text-warning", icon: AlertTriangle },
+const levelConfig = {
+  info: { color: "text-primary", icon: ShieldCheck },
+  warning: { color: "text-warning", icon: AlertTriangle },
+  error: { color: "text-destructive", icon: X },
 };
 
 export default function AuditLog() {
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const selected = logs.find((l) => l.id === selectedId);
+  const [entries, setEntries] = useState<AuditEntry[]>(() => auditStore.list());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleAppend = () => {
+      setEntries(auditStore.list());
+    };
+    eventBus.on(Events.AUDIT_APPENDED, handleAppend);
+    return () => {
+      eventBus.off(Events.AUDIT_APPENDED, handleAppend);
+    };
+  }, []);
+
+  const selected = entries.find((entry) => entry.id === selectedId) ?? null;
+
+  const selectedDetails = useMemo(() => {
+    if (!selected) {
+      return [];
+    }
+
+    const detailEntries: Array<{ label: string; value: string }> = [
+      { label: "Summary", value: selected.title },
+      { label: "Actor", value: selected.actor },
+    ];
+
+    if (selected.description) {
+      detailEntries.push({ label: "Details", value: selected.description });
+    }
+
+    if (selected.moduleId) {
+      detailEntries.push({ label: "Module", value: selected.moduleId });
+    }
+
+    if (selected.data && Object.keys(selected.data).length > 0) {
+      detailEntries.push({ label: "Data", value: JSON.stringify(selected.data, null, 2) });
+    }
+
+    return detailEntries;
+  }, [selected]);
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
@@ -96,9 +62,13 @@ export default function AuditLog() {
       <div className="flex gap-4">
         {/* Timeline */}
         <div className="flex-1 space-y-1">
-          {logs.map((log) => {
-            const config = typeConfig[log.type];
+          {entries.length === 0 ? (
+            <div className="finance-card text-center text-sm text-muted-foreground">No audit entries yet.</div>
+          ) : (
+            entries.map((log) => {
+            const config = levelConfig[log.level];
             const Icon = config.icon;
+            const date = new Date(log.ts);
             return (
               <button
                 key={log.id}
@@ -111,14 +81,15 @@ export default function AuditLog() {
                   <Icon className="h-4 w-4" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-foreground truncate">{log.action}</div>
+                  <div className="text-sm font-medium text-foreground truncate">{log.title}</div>
                   <div className="text-xs text-muted-foreground">
-                    {log.actor} · {log.date} {log.time}
+                    {log.actor} · {date.toLocaleDateString()} {date.toLocaleTimeString()}
                   </div>
                 </div>
               </button>
             );
-          })}
+          })
+          )}
         </div>
 
         {/* Detail Drawer */}
@@ -138,12 +109,12 @@ export default function AuditLog() {
                   </button>
                 </div>
                 <div className="space-y-4 text-sm">
-                  {Object.entries(selected.detail).map(([key, val]) => (
-                    <div key={key}>
+                  {selectedDetails.map((detail) => (
+                    <div key={detail.label}>
                       <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
-                        {key}
+                        {detail.label}
                       </div>
-                      <div className="text-foreground/80">{val}</div>
+                      <div className="text-foreground/80 whitespace-pre-wrap">{detail.value}</div>
                     </div>
                   ))}
                 </div>
