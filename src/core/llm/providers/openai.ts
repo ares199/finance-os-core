@@ -43,14 +43,18 @@ const extractResponseText = (data: any): string => {
 
     for (const item of data.output) {
       if (!Array.isArray(item?.content)) {
+        if (typeof item?.text === "string" && item.text.trim()) {
+          parts.push(item.text.trim());
+        }
         continue;
       }
 
       for (const block of item.content) {
-        if (
-          typeof block?.text === "string" &&
-          ["output_text", "summary_text", "refusal"].includes(block.type)
-        ) {
+        if (typeof block?.text !== "string") {
+          continue;
+        }
+        const blockType = block.type ?? "output_text";
+        if (["output_text", "summary_text", "refusal", "reasoning"].includes(blockType)) {
           parts.push(block.text.trim());
         }
       }
