@@ -54,7 +54,7 @@ const extractResponseText = (data: any): string => {
           continue;
         }
         const blockType = block.type ?? "output_text";
-        if (["output_text", "summary_text", "refusal", "reasoning", "text"].includes(blockType)) {
+        if (["output_text", "summary_text", "refusal", "reasoning"].includes(blockType)) {
           parts.push(block.text.trim());
         }
       }
@@ -81,9 +81,7 @@ const extractResponseText = (data: any): string => {
     }
   }
 
-  throw new Error(
-    `Unable to parse OpenAI response: ${JSON.stringify(data, null, 2)}`
-  );
+  return "";
 };
 
 const getResponsePreview = (responseText: string) =>
