@@ -11,6 +11,15 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    proxy: {
+      "/binance": {
+        target: "https://api.binance.com",
+        changeOrigin: true,
+        secure: true,
+        // DEV-only: production needs a backend proxy/server for Binance.
+        rewrite: (path) => path.replace(/^\/binance/, ""),
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
