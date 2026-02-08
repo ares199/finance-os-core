@@ -24,7 +24,6 @@ type OpenAIResponsesResponse = {
 };
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 1200;
-const DEFAULT_TEMPERATURE = 0.4;
 
 const toInputMessage = (message: LLMMessage) => ({
   role: message.role,
@@ -72,6 +71,7 @@ export class OpenAIClient implements LLMClient {
   }
 
   async chat(messages: LLMMessage[], options?: LLMChatOptions): Promise<{ text: string }> {
+    const model = options?.model ?? this.model;
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -79,9 +79,8 @@ export class OpenAIClient implements LLMClient {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
-        model: options?.model ?? this.model,
+        model,
         input: messages.map(toInputMessage),
-        temperature: options?.temperature ?? DEFAULT_TEMPERATURE,
         max_output_tokens: options?.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
       }),
     });
