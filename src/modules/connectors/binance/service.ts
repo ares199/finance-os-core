@@ -10,7 +10,8 @@ import type { Holding } from "@/core/dataHub/types";
 import { loadInstalledModules } from "@/core/permissions/store";
 
 const BINANCE_KEYS_KEY = "financeos.binance.keys.v1";
-const BINANCE_BASE_URL = "https://api.binance.com";
+// DEV-only: production should use a backend proxy/server for Binance calls.
+const BINANCE_BASE_URL = "/binance";
 export const BINANCE_CONNECTOR_ID = "connector.binance";
 
 interface BinanceKeys {
