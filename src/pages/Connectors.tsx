@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Plus, RefreshCw, Settings, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,49 +9,18 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-
-const connectors = [
-  {
-    name: "Binance",
-    type: "Exchange",
-    status: "connected" as const,
-    permissions: ["Read", "Trade"],
-    lastSync: "2 min ago",
-  },
-  {
-    name: "Chase Bank",
-    type: "Bank",
-    status: "connected" as const,
-    permissions: ["Read"],
-    lastSync: "1 hour ago",
-  },
-  {
-    name: "Interactive Brokers",
-    type: "Broker",
-    status: "syncing" as const,
-    permissions: ["Read", "Trade"],
-    lastSync: "Syncing…",
-  },
-  {
-    name: "Coinbase",
-    type: "Exchange",
-    status: "disconnected" as const,
-    permissions: ["Read"],
-    lastSync: "3 days ago",
-  },
-  {
-    name: "Revolut",
-    type: "Bank",
-    status: "connected" as const,
-    permissions: ["Read"],
-    lastSync: "30 min ago",
-  },
-];
+import { eventBus, Events } from "@/core/events/bus";
+import { getDataHubState } from "@/core/dataHub/store";
+import type { ConnectorSyncStatus } from "@/core/dataHub/types";
+import { usePlatform } from "@/core/plugin/PlatformContext";
+import BinanceManageDialog from "@/modules/connectors/binance/ui/BinanceManageDialog";
+import { BINANCE_CONNECTOR_ID, isBinanceConnected } from "@/modules/connectors/binance/service";
 
 const statusConfig = {
   connected: { label: "Connected", class: "status-connected" },
   disconnected: { label: "Disconnected", class: "status-disconnected" },
   syncing: { label: "Syncing", class: "status-syncing" },
+  error: { label: "Error", class: "status-disconnected" },
 };
 
 const availableConnectors = [
@@ -70,8 +39,86 @@ const item = {
   show: { opacity: 1, y: 0 },
 };
 
+function formatRelativeTime(ts?: number) {
+  if (!ts) {
+    return "Never";
+  }
+  const diffMs = Date.now() - ts;
+  const diffMinutes = Math.floor(diffMs / 60000);
+  if (diffMinutes < 1) {
+    return "Just now";
+  }
+  if (diffMinutes < 60) {
+    return `${diffMinutes} min ago`;
+  }
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
 export default function Connectors() {
   const [open, setOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [dataHubState, setDataHubState] = useState(getDataHubState());
+  const { platform } = usePlatform();
+
+  useEffect(() => {
+    const handleUpdate = () => setDataHubState(getDataHubState());
+    eventBus.on(Events.DATAHUB_UPDATED, handleUpdate);
+    return () => eventBus.off(Events.DATAHUB_UPDATED, handleUpdate);
+  }, []);
+
+  const binanceModule = platform.modules.find((module) => module.manifest.id === BINANCE_CONNECTOR_ID);
+  const binanceEnabled = Boolean(binanceModule?.installed?.enabled);
+  const binanceState = dataHubState.connectors[BINANCE_CONNECTOR_ID];
+  const binanceStatus: ConnectorSyncStatus =
+    binanceState?.status ?? (isBinanceConnected() ? "connected" : "disconnected");
+  const binanceLastSync = formatRelativeTime(binanceState?.lastSyncTs);
+
+  const connectors = useMemo(
+    () => [
+      {
+        name: "Binance",
+        type: "Exchange",
+        status: binanceStatus,
+        permissions: ["Read"],
+        lastSync: binanceLastSync,
+        error: binanceState?.error,
+      },
+      {
+        name: "Chase Bank",
+        type: "Bank",
+        status: "connected" as const,
+        permissions: ["Read"],
+        lastSync: "1 hour ago",
+      },
+      {
+        name: "Interactive Brokers",
+        type: "Broker",
+        status: "syncing" as const,
+        permissions: ["Read", "Trade"],
+        lastSync: "Syncing…",
+      },
+      {
+        name: "Coinbase",
+        type: "Exchange",
+        status: "disconnected" as const,
+        permissions: ["Read"],
+        lastSync: "3 days ago",
+      },
+      {
+        name: "Revolut",
+        type: "Bank",
+        status: "connected" as const,
+        permissions: ["Read"],
+        lastSync: "30 min ago",
+      },
+    ],
+    [binanceLastSync, binanceState?.error, binanceStatus]
+  );
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
@@ -134,9 +181,25 @@ export default function Connectors() {
                 Last sync: <span className="text-foreground/70 mono">{c.lastSync}</span>
               </div>
             </div>
-            <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs">
-              <Settings className="h-3 w-3" /> Manage
-            </Button>
+            {c.name === "Binance" ? (
+              <div className="space-y-2">
+                <BinanceManageDialog open={manageOpen} onOpenChange={setManageOpen} disabled={!binanceEnabled} />
+                {!binanceEnabled && (
+                  <div className="text-[11px] text-muted-foreground">
+                    Install the Binance module from the Module Store to enable syncing.
+                  </div>
+                )}
+                {c.error && (
+                  <div className="text-[11px] text-destructive">
+                    Last error: {c.error}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs">
+                <Settings className="h-3 w-3" /> Manage
+              </Button>
+            )}
           </motion.div>
         ))}
       </div>

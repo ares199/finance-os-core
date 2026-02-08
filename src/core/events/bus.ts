@@ -1,5 +1,6 @@
 export const Events = {
   CONNECTOR_SYNCED: "connector.synced",
+  DATAHUB_UPDATED: "datahub.updated",
   POLICY_UPDATED: "policy.updated",
   ACTION_REQUESTED: "action.requested",
   ACTION_COMPLETED: "action.completed",
