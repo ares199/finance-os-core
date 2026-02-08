@@ -38,24 +38,33 @@ const extractResponseText = (data: any): string => {
     return data.output_text;
   }
 
-  if (Array.isArray(data?.output)) {
+  const collectFromOutput = (output: OpenAIResponsesOutputItem[]) => {
     const parts: string[] = [];
 
-    for (const item of data.output) {
+    for (const item of output) {
       if (!Array.isArray(item?.content)) {
+        if (typeof item?.text === "string" && item.text.trim()) {
+          parts.push(item.text.trim());
+        }
         continue;
       }
 
       for (const block of item.content) {
-        if (
-          typeof block?.text === "string" &&
-          ["output_text", "summary_text", "refusal"].includes(block.type)
-        ) {
+        if (typeof block?.text !== "string") {
+          continue;
+        }
+        const blockType = block.type ?? "output_text";
+        if (["output_text", "summary_text", "refusal", "reasoning", "text"].includes(blockType)) {
           parts.push(block.text.trim());
         }
       }
     }
 
+    return parts;
+  };
+
+  if (Array.isArray(data?.output)) {
+    const parts = collectFromOutput(data.output);
     if (parts.length > 0) {
       return parts.join("\n\n");
     }
@@ -63,6 +72,13 @@ const extractResponseText = (data: any): string => {
 
   if (typeof data?.response?.output_text === "string") {
     return data.response.output_text;
+  }
+
+  if (Array.isArray(data?.response?.output)) {
+    const parts = collectFromOutput(data.response.output);
+    if (parts.length > 0) {
+      return parts.join("\n\n");
+    }
   }
 
   throw new Error(
