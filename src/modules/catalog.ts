@@ -7,6 +7,7 @@ import { riskModule } from "@/modules/core/risk/manifest";
 import { settingsModule } from "@/modules/core/settings/manifest";
 import { storeModule } from "@/modules/core/store/manifest";
 import { binanceConnectorModule } from "@/modules/connectors/binance/manifest";
+import { ceoBrainModule } from "@/modules/brain/ceo/manifest";
 
 export const moduleCatalog: ModuleManifest[] = [
   dashboardModule,
@@ -17,6 +18,7 @@ export const moduleCatalog: ModuleManifest[] = [
   storeModule,
   settingsModule,
   binanceConnectorModule,
+  ceoBrainModule,
   {
     id: "market.dca",
     name: "DCA Bot",
