@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { motion } from "framer-motion";
 import { ShieldAlert, AlertOctagon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,9 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { auditStore } from "@/core/audit/auditStore";
+import { loadPolicy, savePolicy } from "@/core/policy/store";
+import type { AutonomyMode, PolicyState } from "@/core/policy/types";
 
 const autonomyModes = [
   { id: "readonly", label: "Read-Only", desc: "View only, no actions" },
@@ -21,12 +24,25 @@ const autonomyModes = [
 ];
 
 export default function RulesRisk() {
-  const [mode, setMode] = useState("suggest");
-  const [maxDailyLoss, setMaxDailyLoss] = useState([5]);
-  const [maxPosition, setMaxPosition] = useState([10]);
-  const [maxCrypto, setMaxCrypto] = useState([30]);
-  const [leverageEnabled, setLeverageEnabled] = useState(false);
+  const [policy, setPolicy] = useState<PolicyState>(() => loadPolicy());
   const [killSwitchOpen, setKillSwitchOpen] = useState(false);
+
+  const updatePolicy = useCallback((updates: Partial<PolicyState>, title: string, description?: string) => {
+    setPolicy((current) => {
+      const nextPolicy = { ...current, ...updates };
+      savePolicy(nextPolicy);
+      auditStore.append({
+        id: crypto.randomUUID(),
+        ts: Date.now(),
+        level: "info",
+        title,
+        description,
+        actor: "User",
+        data: updates,
+      });
+      return nextPolicy;
+    });
+  }, []);
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
@@ -42,14 +58,20 @@ export default function RulesRisk() {
           {autonomyModes.map((m) => (
             <button
               key={m.id}
-              onClick={() => setMode(m.id)}
+              onClick={() =>
+                updatePolicy(
+                  { autonomyMode: m.id as AutonomyMode },
+                  "Autonomy mode updated",
+                  `Set autonomy mode to ${m.label}.`
+                )
+              }
               className={`rounded-lg border p-4 text-left transition-all ${
-                mode === m.id
+                policy.autonomyMode === m.id
                   ? "border-primary bg-primary/10"
                   : "border-border hover:border-muted-foreground/30"
               }`}
             >
-              <div className={`text-sm font-medium ${mode === m.id ? "text-primary" : "text-foreground"}`}>
+              <div className={`text-sm font-medium ${policy.autonomyMode === m.id ? "text-primary" : "text-foreground"}`}>
                 {m.label}
               </div>
               <div className="text-xs text-muted-foreground mt-1">{m.desc}</div>
@@ -65,25 +87,60 @@ export default function RulesRisk() {
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Max Daily Loss</span>
-            <span className="mono text-foreground font-medium">{maxDailyLoss[0]}%</span>
+            <span className="mono text-foreground font-medium">{policy.maxDailyLossPct}%</span>
           </div>
-          <Slider value={maxDailyLoss} onValueChange={setMaxDailyLoss} max={20} step={1} className="[&_[role=slider]]:bg-primary" />
+          <Slider
+            value={[policy.maxDailyLossPct]}
+            onValueChange={([value]) => setPolicy((prev) => ({ ...prev, maxDailyLossPct: value }))}
+            onValueCommit={([value]) =>
+              updatePolicy({ maxDailyLossPct: value }, "Risk policy updated", `Max daily loss set to ${value}%.`)
+            }
+            max={20}
+            step={1}
+            className="[&_[role=slider]]:bg-primary"
+          />
         </div>
 
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Max Position Size</span>
-            <span className="mono text-foreground font-medium">{maxPosition[0]}%</span>
+            <span className="mono text-foreground font-medium">{policy.maxPositionSizePct}%</span>
           </div>
-          <Slider value={maxPosition} onValueChange={setMaxPosition} max={50} step={1} className="[&_[role=slider]]:bg-primary" />
+          <Slider
+            value={[policy.maxPositionSizePct]}
+            onValueChange={([value]) => setPolicy((prev) => ({ ...prev, maxPositionSizePct: value }))}
+            onValueCommit={([value]) =>
+              updatePolicy(
+                { maxPositionSizePct: value },
+                "Risk policy updated",
+                `Max position size set to ${value}%.`
+              )
+            }
+            max={50}
+            step={1}
+            className="[&_[role=slider]]:bg-primary"
+          />
         </div>
 
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Max Crypto Allocation</span>
-            <span className="mono text-foreground font-medium">{maxCrypto[0]}%</span>
+            <span className="mono text-foreground font-medium">{policy.maxCryptoAllocationPct}%</span>
           </div>
-          <Slider value={maxCrypto} onValueChange={setMaxCrypto} max={100} step={5} className="[&_[role=slider]]:bg-primary" />
+          <Slider
+            value={[policy.maxCryptoAllocationPct]}
+            onValueChange={([value]) => setPolicy((prev) => ({ ...prev, maxCryptoAllocationPct: value }))}
+            onValueCommit={([value]) =>
+              updatePolicy(
+                { maxCryptoAllocationPct: value },
+                "Risk policy updated",
+                `Max crypto allocation set to ${value}%.`
+              )
+            }
+            max={100}
+            step={5}
+            className="[&_[role=slider]]:bg-primary"
+          />
         </div>
 
         <div className="flex items-center justify-between">
@@ -91,7 +148,16 @@ export default function RulesRisk() {
             <div className="text-sm text-foreground">Leverage</div>
             <div className="text-xs text-muted-foreground">Allow leveraged positions</div>
           </div>
-          <Switch checked={leverageEnabled} onCheckedChange={setLeverageEnabled} />
+          <Switch
+            checked={policy.allowLeverage}
+            onCheckedChange={(checked) =>
+              updatePolicy(
+                { allowLeverage: checked },
+                "Risk policy updated",
+                checked ? "Leverage enabled." : "Leverage disabled."
+              )
+            }
+          />
         </div>
       </div>
 
@@ -125,7 +191,17 @@ export default function RulesRisk() {
           </DialogHeader>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setKillSwitchOpen(false)}>Cancel</Button>
-            <Button className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => setKillSwitchOpen(false)}>
+            <Button
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                updatePolicy(
+                  { killSwitch: true, autonomyMode: "readonly" },
+                  "Kill switch activated",
+                  "All automation halted. Autonomy set to read-only."
+                );
+                setKillSwitchOpen(false);
+              }}
+            >
               Activate Kill Switch
             </Button>
           </DialogFooter>

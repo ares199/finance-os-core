@@ -1,13 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard,
-  Plug,
-  ShieldAlert,
-  Workflow,
-  ScrollText,
-  Store,
-  Settings,
   ChevronLeft,
   ChevronRight,
   Puzzle,
@@ -15,20 +8,22 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-
-const navItems = [
-  { title: "Dashboard", icon: LayoutDashboard, path: "/" },
-  { title: "Connectors", icon: Plug, path: "/connectors" },
-  { title: "Rules & Risk", icon: ShieldAlert, path: "/rules" },
-  { title: "Automations", icon: Workflow, path: "/automations" },
-  { title: "Audit Log", icon: ScrollText, path: "/audit" },
-  { title: "Module Store", icon: Store, path: "/modules" },
-  { title: "Settings", icon: Settings, path: "/settings" },
-];
+import { usePlatform } from "@/core/plugin/PlatformContext";
 
 export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const { platform } = usePlatform();
+
+  const { coreRoutes, installedRoutes } = useMemo(() => {
+    const coreModules = platform.modules.filter((module) => module.isCore && module.installed?.enabled);
+    const installedModules = platform.modules.filter((module) => !module.isCore && module.installed?.enabled);
+
+    return {
+      coreRoutes: coreModules.flatMap((module) => module.manifest.routes ?? []),
+      installedRoutes: installedModules.flatMap((module) => module.manifest.routes ?? []),
+    };
+  }, [platform.modules]);
 
   return (
     <motion.aside
@@ -64,7 +59,7 @@ export function AppSidebar() {
             </span>
           )}
         </div>
-        {navItems.map((item) => {
+        {coreRoutes.map((item) => {
           const active = location.pathname === item.path;
           return (
             <Link
@@ -77,7 +72,9 @@ export function AppSidebar() {
                   : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
               )}
             >
-              <item.icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
+              {item.icon && (
+                <item.icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
+              )}
               <AnimatePresence>
                 {!collapsed && (
                   <motion.span
@@ -86,7 +83,7 @@ export function AppSidebar() {
                     exit={{ opacity: 0 }}
                     className="whitespace-nowrap overflow-hidden"
                   >
-                    {item.title}
+                    {item.label}
                   </motion.span>
                 )}
               </AnimatePresence>
@@ -102,10 +99,46 @@ export function AppSidebar() {
                 Installed Modules
               </span>
             </div>
-            <div className="px-3 py-4 text-center">
-              <Puzzle className="mx-auto h-5 w-5 text-muted-foreground/50 mb-1" />
-              <p className="text-xs text-muted-foreground/60">No modules installed</p>
-            </div>
+            {installedRoutes.length === 0 ? (
+              <div className="px-3 py-4 text-center">
+                <Puzzle className="mx-auto h-5 w-5 text-muted-foreground/50 mb-1" />
+                <p className="text-xs text-muted-foreground/60">No modules installed</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {installedRoutes.map((item) => {
+                  const active = location.pathname === item.path;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150",
+                        active
+                          ? "bg-sidebar-accent text-primary font-medium"
+                          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
+                      )}
+                    >
+                      {item.icon && (
+                        <item.icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
+                      )}
+                      <AnimatePresence>
+                        {!collapsed && (
+                          <motion.span
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="whitespace-nowrap overflow-hidden"
+                          >
+                            {item.label}
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
       </nav>

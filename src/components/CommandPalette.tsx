@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CommandDialog,
@@ -9,31 +9,8 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import {
-  LayoutDashboard,
-  Link2,
-  Shield,
-  Workflow,
-  ScrollText,
-  Package,
-  Settings,
-  Search,
-  Sparkles,
-  Bell,
-  User,
-  Moon,
-  Sun,
-} from "lucide-react";
-
-const navigationItems = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard, keywords: ["home", "workspace", "widgets"] },
-  { name: "Connectors", href: "/connectors", icon: Link2, keywords: ["binance", "bank", "broker", "sync"] },
-  { name: "Rules & Risk", href: "/rules-risk", icon: Shield, keywords: ["autonomy", "kill switch", "limits"] },
-  { name: "Automations", href: "/automations", icon: Workflow, keywords: ["workflows", "triggers", "actions"] },
-  { name: "Audit Log", href: "/audit-log", icon: ScrollText, keywords: ["history", "timeline", "events"] },
-  { name: "Module Store", href: "/module-store", icon: Package, keywords: ["install", "plugins", "extensions"] },
-  { name: "Settings", href: "/settings", icon: Settings, keywords: ["profile", "notifications", "theme"] },
-];
+import { LayoutDashboard, Link2, Shield, Workflow, Sparkles, Package } from "lucide-react";
+import { usePlatform } from "@/core/plugin/PlatformContext";
 
 const quickActions = [
   { name: "Add Widget", action: "add-widget", icon: LayoutDashboard, keywords: ["create", "new"] },
@@ -57,9 +34,21 @@ interface CommandPaletteProps {
 export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPaletteProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const navigate = useNavigate();
+  const { platform } = usePlatform();
 
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
+
+  const navigationItems = useMemo(
+    () =>
+      platform.routes.map((route) => ({
+        name: route.label,
+        href: route.path,
+        icon: route.icon,
+        keywords: [route.label.toLowerCase()],
+      })),
+    [platform.routes]
+  );
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -85,7 +74,7 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
 
     // Handle quick actions (would trigger modals/actions in real app)
     console.log("Action triggered:", value);
-  }, [navigate, setOpen]);
+  }, [navigate, navigationItems, setOpen]);
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
@@ -101,7 +90,7 @@ export function CommandPalette({ open: controlledOpen, onOpenChange }: CommandPa
               onSelect={handleSelect}
               keywords={item.keywords}
             >
-              <item.icon className="mr-2 h-4 w-4 text-muted-foreground" />
+              {item.icon && <item.icon className="mr-2 h-4 w-4 text-muted-foreground" />}
               <span>{item.name}</span>
             </CommandItem>
           ))}
