@@ -28,7 +28,7 @@ const DEFAULT_TEMPERATURE = 0.4;
 
 const toInputMessage = (message: LLMMessage) => ({
   role: message.role,
-  content: [{ type: "text", text: message.content }],
+  content: [{ type: "input_text", text: message.content }],
 });
 
 const extractResponseText = (parsed: OpenAIResponsesResponse) => {
