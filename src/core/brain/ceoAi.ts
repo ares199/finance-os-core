@@ -183,7 +183,6 @@ export async function runCeoAiReview(llmClient: LLMClient): Promise<CEOReport> {
   try {
     const messages = buildPrompt(snapshot);
     const response = await llmClient.chat(messages, {
-      temperature: 0.2,
       maxTokens: 900,
     });
 
