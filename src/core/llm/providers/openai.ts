@@ -21,6 +21,9 @@ type OpenAIResponsesResponse = {
   error?: {
     message?: string;
   };
+  response?: {
+    output_text?: string;
+  };
 };
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 1200;
@@ -30,31 +33,47 @@ const toInputMessage = (message: LLMMessage) => ({
   content: [{ type: "input_text", text: message.content }],
 });
 
-const extractResponseText = (parsed: OpenAIResponsesResponse) => {
-  const chunks: string[] = [];
-
-  if (typeof parsed.output_text === "string" && parsed.output_text.trim()) {
-    chunks.push(parsed.output_text.trim());
+const extractResponseText = (data: any): string => {
+  if (typeof data?.output_text === "string" && data.output_text.trim()) {
+    return data.output_text;
   }
 
-  if (Array.isArray(parsed.output)) {
-    parsed.output.forEach((item) => {
-      if (typeof item.text === "string" && item.text.trim()) {
-        chunks.push(item.text.trim());
+  if (Array.isArray(data?.output)) {
+    const parts: string[] = [];
+
+    for (const item of data.output) {
+      if (!Array.isArray(item?.content)) {
+        continue;
       }
-      if (Array.isArray(item.content)) {
-        item.content.forEach((content) => {
-          if (typeof content.text === "string" && content.text.trim()) {
-            chunks.push(content.text.trim());
-          }
-        });
+
+      for (const block of item.content) {
+        if (
+          typeof block?.text === "string" &&
+          ["output_text", "summary_text", "refusal"].includes(block.type)
+        ) {
+          parts.push(block.text.trim());
+        }
       }
-    });
+    }
+
+    if (parts.length > 0) {
+      return parts.join("\n\n");
+    }
   }
 
-  const combined = chunks.filter(Boolean).join("\n").trim();
-  return combined.length > 0 ? combined : null;
+  if (typeof data?.response?.output_text === "string") {
+    return data.response.output_text;
+  }
+
+  throw new Error(
+    `Unable to parse OpenAI response: ${JSON.stringify(data, null, 2)}`
+  );
 };
+
+const getResponsePreview = (responseText: string) =>
+  import.meta.env.DEV && responseText
+    ? ` Response preview: ${responseText.slice(0, 500)}`
+    : "";
 
 export class OpenAIClient implements LLMClient {
   private apiKey: string;
@@ -85,30 +104,35 @@ export class OpenAIClient implements LLMClient {
       }),
     });
 
-    const text = await response.text();
-    if (!response.ok) {
-      let message = text || response.statusText || "OpenAI request failed.";
-      try {
-        const parsed = JSON.parse(text) as OpenAIResponsesResponse;
-        message = parsed.error?.message ?? message;
-      } catch {
-        // ignore parse errors
-      }
-      throw new LLMError(`OpenAI API error ${response.status}: ${message}`);
-    }
+    const responseText = await response.clone().text().catch(() => "");
+    let data: OpenAIResponsesResponse;
 
-    let parsed: OpenAIResponsesResponse;
     try {
-      parsed = JSON.parse(text) as OpenAIResponsesResponse;
+      data = (await response.json()) as OpenAIResponsesResponse;
     } catch (error) {
-      throw new LLMError("Failed to parse OpenAI response.");
+      const preview = getResponsePreview(responseText);
+      throw new LLMError(`Failed to parse OpenAI response.${preview}`);
     }
 
-    const content = extractResponseText(parsed);
-    if (!content) {
-      throw new LLMError("Failed to extract text from OpenAI response. Unexpected response shape.");
+    if (!response.ok) {
+      const message =
+        data?.error?.message ||
+        responseText ||
+        response.statusText ||
+        "OpenAI request failed.";
+      const preview = getResponsePreview(responseText);
+      throw new LLMError(`OpenAI API error ${response.status}: ${message}${preview}`);
     }
 
-    return { text: content };
+    try {
+      return { text: extractResponseText(data) };
+    } catch (error) {
+      const preview = getResponsePreview(responseText);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to extract text from OpenAI response.";
+      throw new LLMError(`${message}${preview}`);
+    }
   }
 }
