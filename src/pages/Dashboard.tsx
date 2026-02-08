@@ -14,6 +14,7 @@ import {
   Edit3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { usePlatform } from "@/core/plugin/PlatformContext";
 
 const widgets = [
   {
@@ -74,6 +75,9 @@ const item = {
 };
 
 export default function Dashboard() {
+  const { platform } = usePlatform();
+  const moduleWidgets = platform.widgets;
+
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
       {/* Header */}
@@ -114,6 +118,16 @@ export default function Dashboard() {
           </motion.div>
         ))}
       </div>
+
+      {moduleWidgets.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {moduleWidgets.map((widget) => (
+            <motion.div key={widget.id} variants={item}>
+              {widget.component}
+            </motion.div>
+          ))}
+        </div>
+      )}
 
       {/* Bottom row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
