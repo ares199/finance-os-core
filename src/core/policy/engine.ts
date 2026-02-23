@@ -24,6 +24,33 @@ export function evaluatePolicy(policy: PolicyState, actionRequest: ActionRequest
     };
   }
 
+  const projectedDailyLossPct = actionRequest.risk?.projectedDailyLossPct;
+  if (typeof projectedDailyLossPct === "number" && projectedDailyLossPct > policy.maxDailyLossPct) {
+    return {
+      status: "deny",
+      requiresUserApproval: false,
+      reason: `Projected daily loss (${projectedDailyLossPct}%) exceeds max daily loss policy (${policy.maxDailyLossPct}%).`,
+    };
+  }
+
+  const projectedPositionSizePct = actionRequest.risk?.projectedPositionSizePct;
+  if (typeof projectedPositionSizePct === "number" && projectedPositionSizePct > policy.maxPositionSizePct) {
+    return {
+      status: "deny",
+      requiresUserApproval: false,
+      reason: `Projected position size (${projectedPositionSizePct}%) exceeds max position size policy (${policy.maxPositionSizePct}%).`,
+    };
+  }
+
+  const projectedCryptoAllocationPct = actionRequest.risk?.projectedCryptoAllocationPct;
+  if (typeof projectedCryptoAllocationPct === "number" && projectedCryptoAllocationPct > policy.maxCryptoAllocationPct) {
+    return {
+      status: "deny",
+      requiresUserApproval: false,
+      reason: `Projected crypto allocation (${projectedCryptoAllocationPct}%) exceeds max crypto allocation policy (${policy.maxCryptoAllocationPct}%).`,
+    };
+  }
+
   if (policy.autonomyMode === "readonly") {
     return {
       status: "deny",
@@ -32,18 +59,27 @@ export function evaluatePolicy(policy: PolicyState, actionRequest: ActionRequest
     };
   }
 
+  if (policy.autonomyMode === "suggest") {
+    return {
+      status: "ok",
+      requiresUserApproval: true,
+      reason: "Suggestion created. User decides whether to execute.",
+    };
+  }
+
+  if (policy.autonomyMode === "confirm") {
+    return {
+      status: "ok",
+      requiresUserApproval: true,
+      reason: "User approval required before execution.",
+    };
+  }
+
   if (policy.autonomyMode === "auto") {
     return {
       status: "ok",
       requiresUserApproval: false,
-    };
-  }
-
-  if (policy.autonomyMode === "confirm" || policy.autonomyMode === "suggest") {
-    return {
-      status: "ok",
-      requiresUserApproval: true,
-      reason: "User approval required by autonomy mode.",
+      reason: "Auto mode allowed execution within risk policy.",
     };
   }
 
