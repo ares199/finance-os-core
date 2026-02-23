@@ -21,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
 import { eventBus, Events } from "@/core/events/bus";
 import { getDashboardMetrics, syncDashboardPerformance } from "@/core/dashboard/metrics";
+import { loadPolicy } from "@/core/policy/store";
+import { generateDashboardSuggestions } from "@/core/suggestions/engine";
 import { usePlatform } from "@/core/plugin/PlatformContext";
 
 type MetricWidgetTemplate = {
@@ -51,11 +53,6 @@ const alerts = [
   { text: "New connector available: Interactive Brokers", type: "info" },
 ];
 
-const aiSuggestions = [
-  "Consider reducing crypto allocation from 32% to 25% based on volatility trends",
-  "Your EUR/USD hedge is expiring in 48h — review or roll forward",
-  "Tax-loss harvesting opportunity detected on TSLA position",
-];
 
 const container = {
   hidden: { opacity: 0 },
@@ -211,6 +208,20 @@ export default function Dashboard() {
   }, [activeWidgetTitles, metricWidgetsByTitle]);
 
   const hiddenWidgetTitles = widgetOrder.filter((title) => !activeWidgetTitles.includes(title));
+
+  const aiSuggestions = useMemo(() => {
+    const metrics = getDashboardMetrics();
+    const policy = loadPolicy();
+    const hasTradeEnabledModule = platform.modules.some(
+      (module) => module.installed?.enabled && module.installed.grantedPermissions.includes("trade")
+    );
+
+    return generateDashboardSuggestions({
+      metrics,
+      policy,
+      hasTradeEnabledModule,
+    });
+  }, [metricWidgetsState, platform.modules]);
 
   const handleMoveWidget = (title: string, direction: "left" | "right") => {
     const currentIndex = activeWidgetTitles.indexOf(title);

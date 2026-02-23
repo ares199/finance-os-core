@@ -10,6 +10,12 @@ export interface NotificationIntent {
   message?: string;
 }
 
+export interface RiskIntent {
+  projectedDailyLossPct?: number;
+  projectedPositionSizePct?: number;
+  projectedCryptoAllocationPct?: number;
+}
+
 export interface ActionRequest {
   id: string;
   ts: number;
@@ -18,6 +24,7 @@ export interface ActionRequest {
   summary: string;
   trade?: TradeIntent;
   notify?: NotificationIntent;
+  risk?: RiskIntent;
 }
 
 export function createActionRequest(input: Omit<ActionRequest, "id" | "ts">): ActionRequest {
