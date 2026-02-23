@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   TrendingUp,
@@ -19,54 +19,30 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
+import { eventBus, Events } from "@/core/events/bus";
+import { getDashboardMetrics, syncDashboardPerformance } from "@/core/dashboard/metrics";
 import { usePlatform } from "@/core/plugin/PlatformContext";
 
-type MetricWidget = {
+type MetricWidgetTemplate = {
   title: string;
-  value: string;
-  change: string;
-  positive: boolean;
   icon: typeof DollarSign;
   span: string;
   isRisk?: boolean;
 };
 
+type MetricWidget = MetricWidgetTemplate & {
+  value: string;
+  change: string;
+  positive: boolean;
+};
+
 const layoutStorageKey = "dashboard:metric-widget-order:v1";
 
-const defaultMetricWidgets: MetricWidget[] = [
-  {
-    title: "Net Worth",
-    value: "$1,284,320",
-    change: "+2.4%",
-    positive: true,
-    icon: DollarSign,
-    span: "col-span-1",
-  },
-  {
-    title: "Cash Balance",
-    value: "$342,100",
-    change: "+$12,400",
-    positive: true,
-    icon: Wallet,
-    span: "col-span-1",
-  },
-  {
-    title: "Portfolio P&L",
-    value: "+$48,230",
-    change: "+3.9% MTD",
-    positive: true,
-    icon: BarChart3,
-    span: "col-span-1",
-  },
-  {
-    title: "Risk Score",
-    value: "Medium",
-    change: "Score: 62/100",
-    positive: false,
-    icon: Shield,
-    span: "col-span-1",
-    isRisk: true,
-  },
+const widgetTemplates: MetricWidgetTemplate[] = [
+  { title: "Net Worth", icon: DollarSign, span: "col-span-1" },
+  { title: "Cash Balance", icon: Wallet, span: "col-span-1" },
+  { title: "Portfolio P&L", icon: BarChart3, span: "col-span-1" },
+  { title: "Risk Score", icon: Shield, span: "col-span-1", isRisk: true },
 ];
 
 const alerts = [
@@ -90,6 +66,25 @@ const item = {
   hidden: { opacity: 0, y: 10 },
   show: { opacity: 1, y: 0 },
 };
+
+const currencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
+const signedCurrencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  signDisplay: "always",
+  maximumFractionDigits: 0,
+});
+
+const signedPercentFormatter = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  signDisplay: "always",
+  maximumFractionDigits: 1,
+});
 
 const moveItem = (items: string[], fromIndex: number, toIndex: number) => {
   if (toIndex < 0 || toIndex >= items.length) {
@@ -130,7 +125,7 @@ const readStoredOrder = () => {
 };
 
 const buildWidgetOrder = (storedOrder: string[] | null) => {
-  const availableTitles = defaultMetricWidgets.map((widget) => widget.title);
+  const availableTitles = widgetTemplates.map((widget) => widget.title);
 
   if (!storedOrder) {
     return availableTitles;
@@ -142,6 +137,42 @@ const buildWidgetOrder = (storedOrder: string[] | null) => {
   return [...validStored, ...missingTitles];
 };
 
+function toMetricWidgets(): MetricWidget[] {
+  const values = getDashboardMetrics();
+
+  const byTitle: Record<string, Omit<MetricWidget, "icon" | "span" | "isRisk">> = {
+    "Net Worth": {
+      title: "Net Worth",
+      value: values.netWorth > 0 ? currencyFormatter.format(values.netWorth) : "--",
+      change: signedPercentFormatter.format(values.netWorthChangePct / 100),
+      positive: values.netWorthChangePct >= 0,
+    },
+    "Cash Balance": {
+      title: "Cash Balance",
+      value: values.cashBalance > 0 ? currencyFormatter.format(values.cashBalance) : "--",
+      change: signedCurrencyFormatter.format(values.cashBalanceDelta),
+      positive: values.cashBalanceDelta >= 0,
+    },
+    "Portfolio P&L": {
+      title: "Portfolio P&L",
+      value: signedCurrencyFormatter.format(values.portfolioPnl),
+      change: `${signedPercentFormatter.format(values.portfolioPnlPct / 100)} since baseline`,
+      positive: values.portfolioPnl >= 0,
+    },
+    "Risk Score": {
+      title: "Risk Score",
+      value: values.riskLabel,
+      change: `Score: ${values.riskScore}/100`,
+      positive: values.riskScore < 70,
+    },
+  };
+
+  return widgetTemplates.map((template) => ({
+    ...template,
+    ...byTitle[template.title],
+  }));
+}
+
 export default function Dashboard() {
   const { platform } = usePlatform();
   const moduleWidgets = platform.widgets;
@@ -149,10 +180,29 @@ export default function Dashboard() {
   const [isEditingLayout, setIsEditingLayout] = useState(false);
   const [widgetOrder, setWidgetOrder] = useState<string[]>(() => buildWidgetOrder(readStoredOrder()));
   const [activeWidgetTitles, setActiveWidgetTitles] = useState<string[]>(widgetOrder);
+  const [metricWidgetsState, setMetricWidgetsState] = useState<MetricWidget[]>(() => toMetricWidgets());
+
+  useEffect(() => {
+    syncDashboardPerformance();
+    setMetricWidgetsState(toMetricWidgets());
+
+    const updateMetrics = () => {
+      syncDashboardPerformance();
+      setMetricWidgetsState(toMetricWidgets());
+    };
+
+    eventBus.on(Events.DATAHUB_UPDATED, updateMetrics);
+    eventBus.on(Events.POLICY_UPDATED, updateMetrics);
+
+    return () => {
+      eventBus.off(Events.DATAHUB_UPDATED, updateMetrics);
+      eventBus.off(Events.POLICY_UPDATED, updateMetrics);
+    };
+  }, []);
 
   const metricWidgetsByTitle = useMemo(() => {
-    return new Map(defaultMetricWidgets.map((widget) => [widget.title, widget]));
-  }, []);
+    return new Map(metricWidgetsState.map((widget) => [widget.title, widget]));
+  }, [metricWidgetsState]);
 
   const metricWidgets = useMemo(() => {
     return activeWidgetTitles
