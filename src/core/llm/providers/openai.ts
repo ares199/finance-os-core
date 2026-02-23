@@ -55,7 +55,10 @@ const extractResponseText = (data: any): string => {
         }
         const blockType = block.type ?? "output_text";
         if (["output_text", "summary_text", "refusal", "reasoning", "text"].includes(blockType)) {
-          parts.push(block.text.trim());
+          const trimmedText = block.text.trim();
+          if (trimmedText) {
+            parts.push(trimmedText);
+          }
         }
       }
     }
@@ -70,7 +73,7 @@ const extractResponseText = (data: any): string => {
     }
   }
 
-  if (typeof data?.response?.output_text === "string") {
+  if (typeof data?.response?.output_text === "string" && data.response.output_text.trim()) {
     return data.response.output_text;
   }
 
@@ -139,7 +142,11 @@ export class OpenAIClient implements LLMClient {
     }
 
     try {
-      return { text: extractResponseText(data) };
+      const text = extractResponseText(data);
+      if (!text.trim()) {
+        throw new LLMError("OpenAI response did not contain any readable text output.");
+      }
+      return { text };
     } catch (error) {
       const preview = getResponsePreview(responseText);
       const message =
