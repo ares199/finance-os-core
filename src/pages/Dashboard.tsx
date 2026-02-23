@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   TrendingUp,
@@ -12,11 +13,27 @@ import {
   Grip,
   Save,
   Edit3,
+  ChevronLeft,
+  ChevronRight,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/sonner";
 import { usePlatform } from "@/core/plugin/PlatformContext";
 
-const widgets = [
+type MetricWidget = {
+  title: string;
+  value: string;
+  change: string;
+  positive: boolean;
+  icon: typeof DollarSign;
+  span: string;
+  isRisk?: boolean;
+};
+
+const layoutStorageKey = "dashboard:metric-widget-order:v1";
+
+const defaultMetricWidgets: MetricWidget[] = [
   {
     title: "Net Worth",
     value: "$1,284,320",
@@ -74,44 +91,226 @@ const item = {
   show: { opacity: 1, y: 0 },
 };
 
+const moveItem = (items: string[], fromIndex: number, toIndex: number) => {
+  if (toIndex < 0 || toIndex >= items.length) {
+    return items;
+  }
+
+  const next = [...items];
+  const [moved] = next.splice(fromIndex, 1);
+
+  if (!moved) {
+    return items;
+  }
+
+  next.splice(toIndex, 0, moved);
+  return next;
+};
+
+const readStoredOrder = () => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(layoutStorageKey);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.every((entry) => typeof entry === "string")) {
+      return null;
+    }
+
+    return parsed as string[];
+  } catch {
+    return null;
+  }
+};
+
+const buildWidgetOrder = (storedOrder: string[] | null) => {
+  const availableTitles = defaultMetricWidgets.map((widget) => widget.title);
+
+  if (!storedOrder) {
+    return availableTitles;
+  }
+
+  const validStored = storedOrder.filter((title) => availableTitles.includes(title));
+  const missingTitles = availableTitles.filter((title) => !validStored.includes(title));
+
+  return [...validStored, ...missingTitles];
+};
+
 export default function Dashboard() {
   const { platform } = usePlatform();
   const moduleWidgets = platform.widgets;
 
+  const [isEditingLayout, setIsEditingLayout] = useState(false);
+  const [widgetOrder, setWidgetOrder] = useState<string[]>(() => buildWidgetOrder(readStoredOrder()));
+  const [activeWidgetTitles, setActiveWidgetTitles] = useState<string[]>(widgetOrder);
+
+  const metricWidgetsByTitle = useMemo(() => {
+    return new Map(defaultMetricWidgets.map((widget) => [widget.title, widget]));
+  }, []);
+
+  const metricWidgets = useMemo(() => {
+    return activeWidgetTitles
+      .map((title) => metricWidgetsByTitle.get(title))
+      .filter((widget): widget is MetricWidget => Boolean(widget));
+  }, [activeWidgetTitles, metricWidgetsByTitle]);
+
+  const hiddenWidgetTitles = widgetOrder.filter((title) => !activeWidgetTitles.includes(title));
+
+  const handleMoveWidget = (title: string, direction: "left" | "right") => {
+    const currentIndex = activeWidgetTitles.indexOf(title);
+    if (currentIndex === -1) {
+      return;
+    }
+
+    const nextIndex = direction === "left" ? currentIndex - 1 : currentIndex + 1;
+    const nextActiveTitles = moveItem(activeWidgetTitles, currentIndex, nextIndex);
+
+    if (nextActiveTitles === activeWidgetTitles) {
+      return;
+    }
+
+    setActiveWidgetTitles(nextActiveTitles);
+
+    const nextOrder = [
+      ...nextActiveTitles,
+      ...widgetOrder.filter((widgetTitle) => !nextActiveTitles.includes(widgetTitle)),
+    ];
+
+    setWidgetOrder(nextOrder);
+  };
+
+  const handleRemoveWidget = (title: string) => {
+    if (activeWidgetTitles.length === 1) {
+      toast.error("At least one widget must stay on the dashboard.");
+      return;
+    }
+
+    setActiveWidgetTitles((current) => current.filter((widgetTitle) => widgetTitle !== title));
+    toast.success(`${title} was removed from the layout.`);
+  };
+
+  const handleAddWidget = () => {
+    const firstHiddenTitle = hiddenWidgetTitles[0];
+
+    if (!firstHiddenTitle) {
+      toast.info("All available widgets are already on the dashboard.");
+      return;
+    }
+
+    setActiveWidgetTitles((current) => [...current, firstHiddenTitle]);
+    toast.success(`${firstHiddenTitle} was added to the dashboard.`);
+  };
+
+  const handleSaveLayout = () => {
+    const nextOrder = [
+      ...activeWidgetTitles,
+      ...widgetOrder.filter((title) => !activeWidgetTitles.includes(title)),
+    ];
+
+    setWidgetOrder(nextOrder);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(layoutStorageKey, JSON.stringify(nextOrder));
+    }
+
+    setIsEditingLayout(false);
+    toast.success("Dashboard layout saved.");
+  };
+
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
           <p className="text-sm text-muted-foreground">Your financial command center</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-            <Edit3 className="h-3.5 w-3.5" /> Edit Layout
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs"
+            onClick={() => setIsEditingLayout((current) => !current)}
+          >
+            <Edit3 className="h-3.5 w-3.5" />
+            {isEditingLayout ? "Finish Editing" : "Edit Layout"}
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={handleSaveLayout}>
             <Save className="h-3.5 w-3.5" /> Save Preset
           </Button>
-          <Button size="sm" className="gap-1.5 text-xs bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button
+            size="sm"
+            className="gap-1.5 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={handleAddWidget}
+          >
             <Plus className="h-3.5 w-3.5" /> Add Widget
           </Button>
         </div>
       </div>
 
-      {/* Main metrics */}
+      {isEditingLayout && (
+        <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-primary">
+          Edit mode is active: move cards left/right, remove cards, then click <span className="font-semibold">Save Preset</span>.
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {widgets.map((w) => (
+        {metricWidgets.map((w, index) => (
           <motion.div key={w.title} variants={item} className="finance-card group cursor-grab">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{w.title}</span>
               <div className="flex items-center gap-1">
+                {isEditingLayout && (
+                  <>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      onClick={() => handleMoveWidget(w.title, "left")}
+                      disabled={index === 0}
+                      aria-label={`Move ${w.title} left`}
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      onClick={() => handleMoveWidget(w.title, "right")}
+                      disabled={index === metricWidgets.length - 1}
+                      aria-label={`Move ${w.title} right`}
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-destructive hover:text-destructive"
+                      onClick={() => handleRemoveWidget(w.title)}
+                      aria-label={`Remove ${w.title}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </>
+                )}
                 <Grip className="h-3 w-3 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity" />
                 <w.icon className="h-4 w-4 text-muted-foreground" />
               </div>
             </div>
             <div className="text-2xl font-bold text-foreground mono">{w.value}</div>
-            <div className={`text-xs mt-1 flex items-center gap-1 ${w.isRisk ? "text-warning" : w.positive ? "text-success" : "text-destructive"}`}>
+            <div
+              className={`text-xs mt-1 flex items-center gap-1 ${
+                w.isRisk ? "text-warning" : w.positive ? "text-success" : "text-destructive"
+              }`}
+            >
               {!w.isRisk && (w.positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />)}
               {w.change}
             </div>
@@ -129,9 +328,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Bottom row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Alerts */}
         <motion.div variants={item} className="finance-card">
           <div className="flex items-center gap-2 mb-4">
             <AlertTriangle className="h-4 w-4 text-warning" />
@@ -147,7 +344,6 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
-        {/* AI Suggestions */}
         <motion.div variants={item} className="finance-card">
           <div className="flex items-center gap-2 mb-4">
             <Sparkles className="h-4 w-4 text-primary" />
